@@ -1,0 +1,70 @@
+#!/bin/sh
+set -eu
+
+if [ "$#" -ne 2 ]; then
+    echo "Usage: codex-devcontainer-proxy WORKSPACE_PATH REMOTE_USER" >&2
+    exit 2
+fi
+
+WORKSPACE_PATH="$1"
+REMOTE_USER="$2"
+CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+ALLOWLIST="$CONFIG_HOME/codex-devcontainer-remote/projects"
+KEY_FILE="${CODEX_DEVCONTAINER_KEY:-$HOME/.ssh/codex-devcontainer_ed25519}"
+
+if [ ! -d "$WORKSPACE_PATH" ]; then
+    echo "codex-devcontainer-proxy: workspace does not exist: $WORKSPACE_PATH" >&2
+    exit 1
+fi
+WORKSPACE_PATH="$(cd "$WORKSPACE_PATH" && pwd -P)"
+
+if [ ! -f "$ALLOWLIST" ] || ! grep -Fqx "$WORKSPACE_PATH" "$ALLOWLIST"; then
+    echo "codex-devcontainer-proxy: workspace is not allowlisted: $WORKSPACE_PATH" >&2
+    exit 1
+fi
+if [ ! -r "$KEY_FILE.pub" ]; then
+    echo "codex-devcontainer-proxy: public key not found: $KEY_FILE.pub" >&2
+    exit 1
+fi
+
+CONTAINER_IDS=""
+for CANDIDATE_ID in $(docker ps \
+    --filter 'label=devcontainer.local_folder' \
+    --format '{{.ID}}'); do
+    CANDIDATE_PATH="$(docker inspect \
+        --format '{{ index .Config.Labels "devcontainer.local_folder" }}' \
+        "$CANDIDATE_ID")"
+    if [ -d "$CANDIDATE_PATH" ]; then
+        CANDIDATE_PATH="$(cd "$CANDIDATE_PATH" && pwd -P)"
+    fi
+    if [ "$CANDIDATE_PATH" = "$WORKSPACE_PATH" ]; then
+        CONTAINER_IDS="${CONTAINER_IDS}${CANDIDATE_ID}
+"
+    fi
+done
+CONTAINER_COUNT="$(printf '%s\n' "$CONTAINER_IDS" | sed '/^$/d' | wc -l | tr -d ' ')"
+if [ "$CONTAINER_COUNT" -ne 1 ]; then
+    echo "codex-devcontainer-proxy: expected one running container for '$WORKSPACE_PATH', found $CONTAINER_COUNT." >&2
+    exit 1
+fi
+CONTAINER_ID="$(printf '%s\n' "$CONTAINER_IDS" | sed -n '1p')"
+PUBLIC_KEY="$(cat "$KEY_FILE.pub")"
+
+docker exec -u 0 "$CONTAINER_ID" \
+    /usr/local/sbin/codex-remote-authorize "$REMOTE_USER" "$PUBLIC_KEY"
+
+if ! docker exec "$CONTAINER_ID" sh -c '
+    attempt=0
+    while ! nc -z 127.0.0.1 22 >/dev/null 2>&1; do
+        attempt=$((attempt + 1))
+        if [ "$attempt" -ge 30 ]; then
+            echo "codex-devcontainer-proxy: SSH did not become ready within 30 seconds." >&2
+            exit 1
+        fi
+        sleep 1
+    done
+'; then
+    exit 1
+fi
+
+exec docker exec -i "$CONTAINER_ID" nc 127.0.0.1 22

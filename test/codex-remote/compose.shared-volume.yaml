@@ -1,0 +1,13 @@
+services:
+  test:
+    image: alpine:3.20
+    command: ["sleep", "infinity"]
+    volumes:
+      - type: volume
+        source: codex-data
+        target: /usr/local/share/codex-data
+
+volumes:
+  codex-data:
+    name: codex-data
+    external: true

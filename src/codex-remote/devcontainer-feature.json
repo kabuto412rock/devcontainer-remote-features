@@ -1,0 +1,27 @@
+{
+  "id": "codex-remote",
+  "version": "0.1.0",
+  "name": "Codex Remote SSH",
+  "description": "Install the official Codex CLI and a key-only SSH endpoint for ChatGPT Desktop Remote Connections.",
+  "documentationURL": "https://github.com/kabuto412rock/devcontainer-remote-features/tree/main/src/codex-remote",
+  "licenseURL": "https://github.com/kabuto412rock/devcontainer-remote-features/blob/main/LICENSE",
+  "options": {
+    "installCodex": {
+      "type": "boolean",
+      "default": true,
+      "description": "Install Codex CLI using OpenAI's official installer."
+    }
+  },
+  "mounts": [
+    {
+      "source": "codex-data",
+      "target": "/usr/local/share/codex-data",
+      "type": "volume"
+    }
+  ],
+  "containerEnv": {
+    "CODEX_HOME": "/usr/local/share/codex-data",
+    "CODEX_INSTALL_DIR": "/usr/local/share/codex-data/bin"
+  },
+  "entrypoint": "/usr/local/share/codex-remote/entrypoint.sh"
+}

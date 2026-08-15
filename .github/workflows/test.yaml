@@ -1,0 +1,52 @@
+name: Test dev container features
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-host-scripts:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse Windows host scripts
+        shell: pwsh
+        run: |
+          $failed = $false
+          Get-ChildItem ./scripts/*.ps1 | ForEach-Object {
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              $_.FullName,
+              [ref]$tokens,
+              [ref]$errors
+            )
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error $_ }
+              $failed = $true
+            }
+          }
+          if ($failed) { exit 1 }
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        baseImage:
+          - debian:bookworm
+          - ubuntu:24.04
+          - mcr.microsoft.com/devcontainers/base:ubuntu
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Dev Container CLI
+        run: npm install -g @devcontainers/cli
+      - name: Test shared Codex volume
+        run: sh ./test/codex-remote/shared-volume.sh
+      - name: Test codex-remote
+        run: devcontainer features test --skip-scenarios -f codex-remote -i "${{ matrix.baseImage }}" .
+
