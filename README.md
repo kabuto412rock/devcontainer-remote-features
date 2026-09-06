@@ -43,16 +43,19 @@ does not recreate or clear the volume.
 
 #### Windows host with a Windows or WSL2 workspace
 
-Run the PowerShell installer once for each project from a Windows terminal,
-before rebuilding its Dev Container. For a project stored in WSL2, pass its UNC
-path, not its Linux path. Replace every `YOUR_...` value before running the
-command:
+Run the PowerShell installer once for each project from an actual **Windows
+PowerShell** terminal, before rebuilding its Dev Container. Do not run it in a
+Dev Container shell or WSL2: `$HOME`, Windows OpenSSH, Docker Desktop, and the
+generated host files must all belong to the Windows account that will make the
+connection. For a project stored in WSL2, pass its UNC path, not its Linux path.
+
+The script accepts exactly three positional arguments, in this order:
+`SshAlias`, `WorkspacePath`, and `RemoteUser`. Replace every placeholder, keep
+the order unchanged, and use a single-line command that is safe to paste into a
+fresh PowerShell session:
 
 ```powershell
-.\scripts\install-host.ps1 `
-  "YOUR_SSH_ALIAS" `
-  "\\wsl.localhost\YOUR_WSL_DISTRO\home\YOUR_WSL_USER\YOUR_PROJECT_PATH" `
-  "YOUR_REMOTE_USER"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\install-host.ps1" "YOUR_SSH_ALIAS" "\\wsl.localhost\YOUR_WSL_DISTRO\home\YOUR_WSL_USER\YOUR_PROJECT_PATH" "YOUR_REMOTE_USER"
 ```
 
 Replace the placeholders as follows:
@@ -74,10 +77,7 @@ the exact directory that VS Code opened.
 For a project stored directly on Windows, pass its normal Windows path instead:
 
 ```powershell
-.\scripts\install-host.ps1 `
-  "YOUR_SSH_ALIAS" `
-  "C:\Users\YOUR_WINDOWS_USER\YOUR_PROJECT_PATH" `
-  "YOUR_REMOTE_USER"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\install-host.ps1" "YOUR_SSH_ALIAS" "C:\Users\YOUR_WINDOWS_USER\YOUR_PROJECT_PATH" "YOUR_REMOTE_USER"
 ```
 
 The Windows installer writes the SSH configuration and key under
@@ -100,15 +100,10 @@ The generated Windows host state is:
 The installer restricts generated files to the current Windows account and is
 safe to rerun; it preserves the existing key and Docker volume.
 
-If Windows PowerShell blocks local scripts, invoke the installer without
-changing the machine-wide execution policy:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-host.ps1 `
-  "YOUR_SSH_ALIAS" `
-  "\\wsl.localhost\YOUR_WSL_DISTRO\home\YOUR_WSL_USER\YOUR_PROJECT_PATH" `
-  "YOUR_REMOTE_USER"
-```
+The examples use a process-only execution-policy bypass; they do not change the
+machine-wide policy. If commands are run one at a time, do not assume a variable
+defined in an earlier command still exists. Repeat the assignment in the same
+line or use the full concrete path.
 
 The global volume must exist before a Docker Compose project can opt into it as
 an external volume. If only the volume bootstrap is needed, run:
@@ -127,7 +122,10 @@ Add this to VS Code **User** settings, not to a project's settings:
 }
 ```
 
-Rebuild the Dev Container after the package has been published.
+Rebuild the Dev Container after the package has been published. Installing the
+host support or changing `dev.containers.defaultFeatures` does not modify an
+already-running container; use **Dev Containers: Rebuild Container** before the
+SSH test.
 
 The Feature mounts `codex-data` at `/usr/local/share/codex-data` and sets both
 `CODEX_HOME` and `CODEX_INSTALL_DIR` to locations under that mount. Image- and
@@ -209,13 +207,13 @@ codex --version
 ```
 
 Then use the same SSH host alias in ChatGPT Desktop under
-**Settings → Connections → SSH**.
+**Settings → Connections → SSH**. Add the verified alias there and connect to
+it; successful command-line SSH alone does not finish the Desktop setup.
 
 To inspect the effective Windows OpenSSH settings before connecting, run:
 
 ```powershell
-ssh -G YOUR_SSH_ALIAS |
-  Select-String '^(user|hostname|identityfile|proxycommand) '
+ssh -G YOUR_SSH_ALIAS | Select-String '^(user|hostname|identityfile|proxycommand) '
 ```
 
 The `proxycommand` must reference `codex-devcontainer-proxy.ps1`. If the proxy
@@ -225,6 +223,49 @@ running and inspect its `devcontainer.local_folder` label:
 ```powershell
 docker ps --filter "label=devcontainer.local_folder" --format "{{.ID}} {{.Labels}}"
 ```
+
+The proxy does not save a container ID. A rebuild can replace the ID; on every
+SSH connection the proxy enumerates running labeled containers, reads each
+container's labels with `docker inspect`, and selects the one whose
+`devcontainer.local_folder` matches the allowlisted workspace path.
+
+### Windows troubleshooting
+
+- **`Could not resolve hostname ...`**: run `ssh -G YOUR_SSH_ALIAS` in the same
+  Windows account. Confirm it shows the generated `user`, `identityfile`, and
+  `proxycommand`. If it does not, check that `$HOME\.ssh\config` contains the
+  generated `Include` and that the alias fragment exists under
+  `$HOME\.ssh\config.d\codex-devcontainers`.
+- **`-File` reports that the script path does not exist, or `featureRepo` is
+  empty**: PowerShell did not receive a valid checkout path. Change to the
+  repository directory and use the literal single-line `-File
+  ".\scripts\install-host.ps1"` example, or replace it with the full path to
+  that file. Do not rely on a variable from an earlier PowerShell invocation.
+- **`Workspace does not exist: vscode`**: the three positional arguments are
+  shifted. The second argument must be the existing workspace path and the third
+  must be the remote user. Invoke `install-host.ps1` as `SshAlias`,
+  `WorkspacePath`, `RemoteUser`, in exactly that order.
+- **No container matches the workspace label** (`Expected one running container
+  ... found 0`): rebuild and start the Dev Container, then inspect labels safely
+  as JSON instead of parsing the display-formatted labels column:
+
+  ```powershell
+  docker ps --filter "label=devcontainer.local_folder" --format "{{.ID}}" | ForEach-Object { $id = $_; $labels = docker inspect --format '{{json .Config.Labels}}' $id | ConvertFrom-Json; [pscustomobject]@{ Id = $id; Workspace = $labels.'devcontainer.local_folder' } }
+  ```
+
+  The displayed workspace must be the same path passed to the installer. For a
+  WSL2 project that means the exact `\\wsl.localhost\DISTRO\...` UNC path.
+
+### Cleaning up a temporary checkout
+
+After installation and successful verification, a temporary clone of this
+repository may be deleted. Do not delete the generated host state needed by
+future connections—especially `$HOME\.ssh\config`,
+`$HOME\.ssh\config.d\codex-devcontainers`,
+`$HOME\.ssh\codex-devcontainer_ed25519` (and `.pub`), or
+`$HOME\.local\bin\codex-devcontainer-proxy.ps1`. Also retain the project
+allowlist under `$HOME\.config\codex-devcontainer-remote` (or the corresponding
+`$env:XDG_CONFIG_HOME` location) and the Docker volume `codex-data`.
 
 ### Trust model
 
