@@ -28,7 +28,7 @@ trap cleanup EXIT HUP INT TERM
 node -e '
     const manifest = require("./src/codex-remote/devcontainer-feature.json");
     const allowedKeys = new Set(["source", "target", "type"]);
-    for (const name of ["codex-data", "claude-data"]) {
+    for (const name of ["codex-data"]) {
         const mount = manifest.mounts.find(({ source }) => source === name);
         if (!mount || mount.target !== `/usr/local/share/${name}` ||
             mount.type !== "volume" ||

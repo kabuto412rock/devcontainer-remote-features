@@ -39,7 +39,7 @@ if ($LASTEXITCODE -ne 0) {
 
 # Git for Windows can shadow Windows OpenSSH on PATH; the alias needs the latter.
 $ssh = Join-Path $env:WINDIR 'System32\OpenSSH\ssh.exe'
-& $ssh $alias 'for tool in codex claude; do if command -v $tool >/dev/null; then printf "%s: " $tool; $tool --version; fi; done; echo CODEX_HOME=$CODEX_HOME CLAUDE_CONFIG_DIR=$CLAUDE_CONFIG_DIR'
+& $ssh $alias 'printf "codex: "; codex --version; echo CODEX_HOME=$CODEX_HOME'
 if ($LASTEXITCODE -ne 0) {
     throw "SSH check through '$alias' failed."
 }

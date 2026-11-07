@@ -41,7 +41,7 @@ if (-not (Get-Command ssh-keygen.exe -ErrorAction SilentlyContinue)) {
 if (-not (Get-Command icacls.exe -ErrorAction SilentlyContinue)) {
     throw 'icacls.exe was not found on PATH.'
 }
-foreach ($volume in 'codex-data', 'claude-data') {
+foreach ($volume in @('codex-data')) {
     & docker.exe volume inspect $volume *> $null
     if ($LASTEXITCODE -ne 0) {
         & docker.exe volume create $volume *> $null
