@@ -87,6 +87,9 @@ download_installer() {
 
 install -d -m 0755 "$SHARE_DIR" /run/sshd
 printf '%s\n' "$REMOTE_USER_NAME" > "$SHARE_DIR/remote-user"
+# The Dev Container CLI may later change the user's UID to match a Linux host;
+# remember the build-time UID so image-owned data directories can be adopted.
+id -u "$REMOTE_USER_NAME" > "$SHARE_DIR/build-uid"
 printf '%s\n' "$INSTALL_CODEX" > "$SHARE_DIR/install-codex"
 printf '%s\n' "$INSTALL_CLAUDE_CODE" > "$SHARE_DIR/install-claude-code"
 rm -f "$SHARE_DIR/initialize-codex.sh"
