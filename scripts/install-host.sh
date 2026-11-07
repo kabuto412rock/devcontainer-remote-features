@@ -53,7 +53,7 @@ command -v ssh-keygen >/dev/null 2>&1 || {
     exit 1
 }
 
-for VOLUME in codex-data claude-data; do
+for VOLUME in codex-data; do
     if ! docker volume inspect "$VOLUME" >/dev/null 2>&1; then
         if ! docker volume create "$VOLUME" >/dev/null; then
             echo "install-host.sh: failed to create the Docker volume '$VOLUME'. Check that the Docker daemon is running." >&2

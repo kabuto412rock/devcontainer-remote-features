@@ -1,13 +1,16 @@
 # Dev Container Remote Features
 
-## Codex / Claude Code Remote SSH (`codex-remote`)
+## Codex Remote SSH (`codex-remote`)
 
 A Dev Container Feature for Debian/Ubuntu images that:
 
-- installs **Codex CLI**, **Claude Code**, or both, using the official installers;
-- keeps their login and settings in a Docker volume or a host folder you choose;
+- installs **Codex CLI** using OpenAI's official installer;
+- keeps Codex's login and settings in a Docker volume, or in a host folder you choose;
 - runs a key-only SSH server inside the container, with no published port, so
-  ChatGPT Desktop, Claude Desktop, or any SSH client can connect.
+  ChatGPT Desktop or any SSH client can connect.
+
+To use Claude Code in the same container, add Anthropic's official Feature
+`ghcr.io/anthropics/devcontainer-features/claude-code:1` alongside this one.
 
 ### Quick start
 
@@ -16,10 +19,7 @@ A Dev Container Feature for Debian/Ubuntu images that:
 
 ```jsonc
 "features": {
-  "ghcr.io/kabuto412rock/devcontainer-remote-features/codex-remote:0": {
-    "installCodex": true,
-    "installClaudeCode": true
-  }
+  "ghcr.io/kabuto412rock/devcontainer-remote-features/codex-remote:0": {}
 }
 ```
 
@@ -44,29 +44,27 @@ For a WSL2 project, run the Windows script from the project's
 
 ```sh
 ssh my-project-devcontainer
+codex --version
 ```
 
-Add the same alias in your desktop app's SSH connection settings.
+Add the same alias in ChatGPT Desktop under **Settings → Connections → SSH**.
 
 ### Options
 
 | Option | Default | Description |
 | --- | --- | --- |
 | `installCodex` | `true` | Install Codex CLI (`https://chatgpt.com/codex/install.sh`) |
-| `installClaudeCode` | `false` | Install Claude Code (`https://claude.ai/install.sh`) |
 
-The CLIs are installed into the image when it is built, so updates arrive when
-you rebuild the container. Claude Code can also update itself until then.
+Codex is installed into the image when it is built, so a new version arrives
+when you rebuild the container.
 
 ### Where login and settings are stored
 
-| Tool | Container path | Environment variable | Default Docker volume |
-| --- | --- | --- | --- |
-| Codex | `/usr/local/share/codex-data` | `CODEX_HOME` | `codex-data` |
-| Claude Code | `/usr/local/share/claude-data` | `CLAUDE_CONFIG_DIR` | `claude-data` |
+Codex uses `/usr/local/share/codex-data` (`CODEX_HOME`) inside the container.
 
-**Docker volume (default).** Every image-based Dev Container on the same Docker
-daemon shares these volumes, so you log in once.
+**Docker volume (default).** The Feature mounts the `codex-data` volume. Every
+image-based Dev Container on the same Docker daemon shares it, so you log in
+once. You don't need to create it in advance.
 
 **Host folder.** To use a host folder instead, add a mount with the same
 `target` to the project's `devcontainer.json`. It replaces the Feature's volume.
@@ -75,32 +73,24 @@ The folder must already exist:
 ```jsonc
 "mounts": [
   // Windows: ${localEnv:USERPROFILE}   macOS/Linux: ${localEnv:HOME}
-  { "type": "bind", "source": "${localEnv:USERPROFILE}/.codex",  "target": "/usr/local/share/codex-data" },
-  { "type": "bind", "source": "${localEnv:USERPROFILE}/.claude", "target": "/usr/local/share/claude-data" }
+  { "type": "bind", "source": "${localEnv:USERPROFILE}/.codex", "target": "/usr/local/share/codex-data" }
 ]
 ```
 
-You can set this per tool, so one tool can use a volume and the other a host
-folder. Notes:
+A host `~/.codex` also shares its login with Codex on the host. The Feature
+never changes ownership of files in a host folder.
 
-- Host folders shared with your local CLIs also share their login. Claude Code
-  keeps its macOS login in the Keychain, so log in once inside the container.
-- The Feature never changes ownership of files in a host folder.
-
-**Docker Compose** scopes volume names per project. To share the global volumes,
-declare them as external in `docker-compose.yml`. `install-host` creates them:
+**Docker Compose** scopes volume names per project. To share the global volume,
+declare it as external in `docker-compose.yml`. `install-host` creates it:
 
 ```yaml
 volumes:
   codex-data:
     name: codex-data
     external: true
-  claude-data:
-    name: claude-data
-    external: true
 ```
 
-These volumes hold credentials and history. Mount them only in containers you
+The volume holds credentials and history. Mount it only in containers you
 trust.
 
 ### Troubleshooting
@@ -111,6 +101,10 @@ trust.
 - **`Expected one running container ... found 0`**: start the Dev Container.
   The path given to `install-host` must match the folder VS Code opened, which
   is the container's `devcontainer.local_folder` label.
+- **`data directory ... is not writable`**: the volume was created by a
+  container whose user has a different UID, such as a WSL2 project versus a
+  Windows project. Use a separate volume name in a mount override for one of
+  them, or use a host folder.
 - **Upgrading from 0.1**: an existing `codex-data` volume is reused as-is. Its
   `bin/` folder is no longer used, so you can delete it.
 
@@ -129,6 +123,6 @@ so keep these files writable only by your account.
 ## Development
 
 - Local end-to-end test on Windows: `.\test\local-devcontainer\run.ps1 -Rebuild`
-- CI runs the Feature tests and scenarios in `test/codex-remote/`.
+- CI runs the Feature tests in `test/codex-remote/`.
 - Release: run the **Release dev container features** workflow. It publishes
   `ghcr.io/kabuto412rock/devcontainer-remote-features/codex-remote:0`.

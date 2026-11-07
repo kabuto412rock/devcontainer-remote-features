@@ -1,8 +1,8 @@
 {
   "id": "codex-remote",
   "version": "0.2.0",
-  "name": "Codex / Claude Code Remote SSH",
-  "description": "Install Codex CLI and/or Claude Code plus a key-only SSH endpoint for desktop remote connections.",
+  "name": "Codex Remote SSH",
+  "description": "Install the official Codex CLI and a key-only SSH endpoint for ChatGPT Desktop Remote Connections.",
   "documentationURL": "https://github.com/kabuto412rock/devcontainer-remote-features/tree/main/src/codex-remote",
   "licenseURL": "https://github.com/kabuto412rock/devcontainer-remote-features/blob/main/LICENSE",
   "options": {
@@ -10,11 +10,6 @@
       "type": "boolean",
       "default": true,
       "description": "Install Codex CLI using OpenAI's official installer."
-    },
-    "installClaudeCode": {
-      "type": "boolean",
-      "default": false,
-      "description": "Install Claude Code using Anthropic's official native installer."
     }
   },
   "mounts": [
@@ -22,17 +17,11 @@
       "source": "codex-data",
       "target": "/usr/local/share/codex-data",
       "type": "volume"
-    },
-    {
-      "source": "claude-data",
-      "target": "/usr/local/share/claude-data",
-      "type": "volume"
     }
   ],
   "containerEnv": {
     "CODEX_HOME": "/usr/local/share/codex-data",
-    "CODEX_INSTALL_DIR": "/opt/codex-remote/codex",
-    "CLAUDE_CONFIG_DIR": "/usr/local/share/claude-data"
+    "CODEX_INSTALL_DIR": "/opt/codex-remote/codex"
   },
   "entrypoint": "/usr/local/share/codex-remote/entrypoint.sh"
 }
