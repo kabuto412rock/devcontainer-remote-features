@@ -1,19 +1,35 @@
 #!/bin/sh
 set -eu
 
+# Usage (all arguments optional; run from the project folder):
+#   install-host.sh [SSH_ALIAS] [WORKSPACE_PATH] [REMOTE_USER]
+# Defaults: WORKSPACE_PATH = current directory,
+#           SSH_ALIAS = <workspace folder name>-devcontainer, REMOTE_USER = vscode.
+
 if [ "$(id -u)" -eq 0 ]; then
-    echo "install-host.sh: do not run this script with sudo; run it as your macOS user." >&2
+    echo "install-host.sh: do not run this script with sudo; run it as your own user." >&2
     exit 1
 fi
 
-if [ "$#" -ne 3 ]; then
-    echo "Usage: install-host.sh SSH_ALIAS WORKSPACE_PATH REMOTE_USER" >&2
+if [ "$#" -gt 3 ]; then
+    echo "Usage: install-host.sh [SSH_ALIAS] [WORKSPACE_PATH] [REMOTE_USER]" >&2
     exit 2
 fi
 
-SSH_ALIAS="$1"
-WORKSPACE_PATH="$2"
-REMOTE_USER="$3"
+WORKSPACE_PATH="${2:-$PWD}"
+REMOTE_USER="${3:-vscode}"
+
+if [ ! -d "$WORKSPACE_PATH" ]; then
+    echo "install-host.sh: workspace does not exist: $WORKSPACE_PATH" >&2
+    exit 1
+fi
+WORKSPACE_PATH="$(cd "$WORKSPACE_PATH" && pwd -P)"
+
+SSH_ALIAS="${1:-}"
+if [ -z "$SSH_ALIAS" ]; then
+    FOLDER_NAME="$(basename "$WORKSPACE_PATH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g')"
+    SSH_ALIAS="$FOLDER_NAME-devcontainer"
+fi
 
 case "$SSH_ALIAS" in
     *[!A-Za-z0-9._-]*|'')
@@ -37,20 +53,15 @@ command -v ssh-keygen >/dev/null 2>&1 || {
     exit 1
 }
 
-if [ ! -d "$WORKSPACE_PATH" ]; then
-    echo "install-host.sh: workspace does not exist: $WORKSPACE_PATH" >&2
-    exit 1
-fi
-WORKSPACE_PATH="$(cd "$WORKSPACE_PATH" && pwd -P)"
-
-if docker volume inspect codex-data >/dev/null 2>&1; then
-    echo "Reusing shared Docker volume: codex-data"
-elif docker volume create codex-data >/dev/null; then
-    echo "Created shared Docker volume: codex-data"
-else
-    echo "install-host.sh: failed to create the shared Docker volume 'codex-data'. Check that the Docker daemon is running and accessible." >&2
-    exit 1
-fi
+for VOLUME in codex-data claude-data; do
+    if ! docker volume inspect "$VOLUME" >/dev/null 2>&1; then
+        if ! docker volume create "$VOLUME" >/dev/null; then
+            echo "install-host.sh: failed to create the Docker volume '$VOLUME'. Check that the Docker daemon is running." >&2
+            exit 1
+        fi
+        echo "Created Docker volume: $VOLUME"
+    fi
+done
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 BIN_DIR="$HOME/.local/bin"
@@ -106,6 +117,5 @@ Host $SSH_ALIAS
 EOF
 chmod 0600 "$FRAGMENT"
 
-echo "Installed SSH alias: $SSH_ALIAS"
-echo "Workspace allowlisted: $WORKSPACE_PATH"
-echo "Test after rebuilding the container: ssh $SSH_ALIAS"
+echo "Installed SSH alias '$SSH_ALIAS' (user $REMOTE_USER) for $WORKSPACE_PATH"
+echo "Start the Dev Container, then connect with: ssh $SSH_ALIAS"

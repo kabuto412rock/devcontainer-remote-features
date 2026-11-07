@@ -1,3 +1,5 @@
 .DS_Store
 .devcontainer/
+!test/local-devcontainer/.devcontainer/
+test/local-devcontainer/.devcontainer/codex-remote/
 

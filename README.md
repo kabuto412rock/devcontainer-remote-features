@@ -1,315 +1,134 @@
 # Dev Container Remote Features
 
-Dev Container Features for remote development workflows.
+## Codex / Claude Code Remote SSH (`codex-remote`)
 
-## Codex Remote SSH
+A Dev Container Feature for Debian/Ubuntu images that:
 
-`codex-remote` prepares a Debian/Ubuntu based Dev Container for ChatGPT
-Desktop's SSH remote connection:
+- installs **Codex CLI**, **Claude Code**, or both, using the official installers;
+- keeps their login and settings in a Docker volume or a host folder you choose;
+- runs a key-only SSH server inside the container, with no published port, so
+  ChatGPT Desktop, Claude Desktop, or any SSH client can connect.
 
-- installs OpenSSH from the distribution package repository;
-- installs Codex CLI on first container start using OpenAI's official installer;
-- persists the Codex CLI, authentication, configuration, and state in a Docker
-  volume, with an opt-in shared volume for Docker Compose projects;
-- starts an SSH server inside the container without publishing a host port;
-- accepts a dedicated local public key only when the host proxy connects;
-- does not run `codex login` during the image build.
+### Quick start
 
-The SSH connection is transported through `docker exec`, so projects do not
-need to modify `docker-compose.yml` or publish port 22.
-
-### 1. Install the host support and create the shared volume
-
-#### macOS
-
-Run once for each project on the Mac, before rebuilding its Dev Container:
-
-```sh
-./scripts/install-host.sh \
-  YOUR_SSH_ALIAS \
-  "/Users/YOUR_MACOS_USER/YOUR_PROJECT_PATH" \
-  YOUR_REMOTE_USER
-```
-
-Replace every `YOUR_...` value: choose a unique alias, provide the macOS user
-name and slash-separated project path relative to that user's home, and set
-`YOUR_REMOTE_USER` to the Dev Container `remoteUser` (commonly `vscode`).
-
-The final argument is the container's Dev Container `remoteUser`. The script
-creates or reuses the global Docker volume named `codex-data`, creates a
-dedicated SSH key, installs the Docker-backed proxy, adds the project to a local
-allowlist, and writes a separate SSH config fragment. Running the script again
-does not recreate or clear the volume.
-
-#### Windows host with a Windows or WSL2 workspace
-
-Run the PowerShell installer once for each project from an actual **Windows
-PowerShell** terminal, before rebuilding its Dev Container. Do not run it in a
-Dev Container shell or WSL2: `$HOME`, Windows OpenSSH, Docker Desktop, and the
-generated host files must all belong to the Windows account that will make the
-connection. For a project stored in WSL2, pass its UNC path, not its Linux path.
-
-The script accepts exactly three positional arguments, in this order:
-`SshAlias`, `WorkspacePath`, and `RemoteUser`. Replace every placeholder, keep
-the order unchanged, and use a single-line command that is safe to paste into a
-fresh PowerShell session:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\install-host.ps1" "YOUR_SSH_ALIAS" "\\wsl.localhost\YOUR_WSL_DISTRO\home\YOUR_WSL_USER\YOUR_PROJECT_PATH" "YOUR_REMOTE_USER"
-```
-
-Replace the placeholders as follows:
-
-| Placeholder | Replace with |
-| --- | --- |
-| `YOUR_SSH_ALIAS` | A unique local SSH name, such as `my-project-devcontainer` |
-| `YOUR_WSL_DISTRO` | The distribution name from `wsl.exe --list --quiet`, such as `Ubuntu` |
-| `YOUR_WSL_USER` | The Linux user that owns the project inside that distribution |
-| `YOUR_WINDOWS_USER` | The Windows account that owns a project stored directly on Windows |
-| `YOUR_PROJECT_PATH` | The project path relative to that user's home, using backslashes on Windows; for example, `projects\my-project` |
-| `YOUR_REMOTE_USER` | The Dev Container `remoteUser`; commonly `vscode` for Microsoft Dev Container images |
-
-For example, if the Linux project path is
-`/home/devuser/projects/my-project`, use `devuser` for `YOUR_WSL_USER` and
-`projects\my-project` for `YOUR_PROJECT_PATH`. The completed UNC path must name
-the exact directory that VS Code opened.
-
-For a project stored directly on Windows, pass its normal Windows path instead:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\install-host.ps1" "YOUR_SSH_ALIAS" "C:\Users\YOUR_WINDOWS_USER\YOUR_PROJECT_PATH" "YOUR_REMOTE_USER"
-```
-
-The Windows installer writes the SSH configuration and key under
-`$HOME\.ssh`, installs the PowerShell Docker proxy under `$HOME\.local\bin`,
-and records the exact workspace path under
-`$HOME\.config\codex-devcontainer-remote`. Windows OpenSSH runs the proxy,
-which uses Docker Desktop to enter the matching container. WSL2 is only the
-workspace location; do not run the Linux host installer inside WSL2 when the
-SSH client is ChatGPT Desktop or another Windows application.
-
-The generated Windows host state is:
-
-- `$HOME\.local\bin\codex-devcontainer-proxy.ps1`;
-- `$HOME\.config\codex-devcontainer-remote\projects`;
-- `$HOME\.ssh\codex-devcontainer_ed25519` and its `.pub` file;
-- `$HOME\.ssh\config` with an `Include` directive;
-- `$HOME\.ssh\config.d\codex-devcontainers\ALIAS.conf`;
-- the Docker volume named `codex-data`.
-
-The installer restricts generated files to the current Windows account and is
-safe to rerun; it preserves the existing key and Docker volume.
-
-The examples use a process-only execution-policy bypass; they do not change the
-machine-wide policy. If commands are run one at a time, do not assume a variable
-defined in an earlier command still exists. Repeat the assignment in the same
-line or use the full concrete path.
-
-The global volume must exist before a Docker Compose project can opt into it as
-an external volume. If only the volume bootstrap is needed, run:
-
-```sh
-docker volume create codex-data
-```
-
-### 2. Always install the Feature
-
-Add this to VS Code **User** settings, not to a project's settings:
+**1. Add the Feature** to `devcontainer.json`, or for every project to
+`dev.containers.defaultFeatures` in your VS Code **User** settings:
 
 ```jsonc
-"dev.containers.defaultFeatures": {
-  "ghcr.io/kabuto412rock/devcontainer-remote-features/codex-remote:0": {}
+"features": {
+  "ghcr.io/kabuto412rock/devcontainer-remote-features/codex-remote:0": {
+    "installCodex": true,
+    "installClaudeCode": true
+  }
 }
 ```
 
-Rebuild the Dev Container after the package has been published. Installing the
-host support or changing `dev.containers.defaultFeatures` does not modify an
-already-running container; use **Dev Containers: Rebuild Container** before the
-SSH test.
+**2. Install the SSH alias** once per project, from the project folder:
 
-The Feature mounts `codex-data` at `/usr/local/share/codex-data` and sets both
-`CODEX_HOME` and `CODEX_INSTALL_DIR` to locations under that mount. Image- and
-Dockerfile-based Dev Containers use the global Docker volume named
-`codex-data`, so projects on the same Docker daemon share the existing Codex
-installation and state automatically.
+```powershell
+# Windows PowerShell
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\path\to\this-repo\scripts\install-host.ps1
+```
 
-Docker Compose scopes Feature-declared volume names to its project by default.
-To share the global volume across Compose projects, add this top-level volume
-declaration to each project's `docker-compose.yml`; the Feature supplies the
-service-level mount:
+```sh
+# macOS / Linux
+/path/to/this-repo/scripts/install-host.sh
+```
+
+By default the alias is `<folder name>-devcontainer` and the SSH user is
+`vscode`. You can pass `[SshAlias] [WorkspacePath] [RemoteUser]` to change them.
+For a WSL2 project, run the Windows script from the project's
+`\\wsl.localhost\...` path.
+
+**3. Rebuild and connect.** Rebuild the Dev Container, then run:
+
+```sh
+ssh my-project-devcontainer
+```
+
+Add the same alias in your desktop app's SSH connection settings.
+
+### Options
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `installCodex` | `true` | Install Codex CLI (`https://chatgpt.com/codex/install.sh`) |
+| `installClaudeCode` | `false` | Install Claude Code (`https://claude.ai/install.sh`) |
+
+The CLIs are installed into the image when it is built, so updates arrive when
+you rebuild the container. Claude Code can also update itself until then.
+
+### Where login and settings are stored
+
+| Tool | Container path | Environment variable | Default Docker volume |
+| --- | --- | --- | --- |
+| Codex | `/usr/local/share/codex-data` | `CODEX_HOME` | `codex-data` |
+| Claude Code | `/usr/local/share/claude-data` | `CLAUDE_CONFIG_DIR` | `claude-data` |
+
+**Docker volume (default).** Every image-based Dev Container on the same Docker
+daemon shares these volumes, so you log in once.
+
+**Host folder.** To use a host folder instead, add a mount with the same
+`target` to the project's `devcontainer.json`. It replaces the Feature's volume.
+The folder must already exist:
+
+```jsonc
+"mounts": [
+  // Windows: ${localEnv:USERPROFILE}   macOS/Linux: ${localEnv:HOME}
+  { "type": "bind", "source": "${localEnv:USERPROFILE}/.codex",  "target": "/usr/local/share/codex-data" },
+  { "type": "bind", "source": "${localEnv:USERPROFILE}/.claude", "target": "/usr/local/share/claude-data" }
+]
+```
+
+You can set this per tool, so one tool can use a volume and the other a host
+folder. Notes:
+
+- Host folders shared with your local CLIs also share their login. Claude Code
+  keeps its macOS login in the Keychain, so log in once inside the container.
+- The Feature never changes ownership of files in a host folder.
+
+**Docker Compose** scopes volume names per project. To share the global volumes,
+declare them as external in `docker-compose.yml`. `install-host` creates them:
 
 ```yaml
 volumes:
   codex-data:
     name: codex-data
     external: true
+  claude-data:
+    name: claude-data
+    external: true
 ```
 
-Run the host setup above first so the external volume exists, then rebuild the
-Dev Container. Without this declaration, a Compose project uses its own volume,
-such as `someproject_codex-data`, and shares state only across its rebuilds.
-
-The volume contains all user-scoped Codex data, including authentication,
-configuration, skills, sessions, logs, and the standalone installation. Every
-Dev Container attached to the global volume can therefore access the same
-sensitive Codex credentials and history. Only share it with containers you
+These volumes hold credentials and history. Mount them only in containers you
 trust.
 
-If a project already mounts a separate volume such as the following, remove it
-to avoid split or shadowed Codex state:
+### Troubleshooting
 
-```yaml
-- codex-data:/home/vscode/.codex
-```
+- **`Could not resolve hostname`**: run `ssh -G ALIAS` and check that
+  `proxycommand` points at `codex-devcontainer-proxy`. On Windows, use Windows
+  OpenSSH (`C:\Windows\System32\OpenSSH\ssh.exe`), not Git for Windows' `ssh`.
+- **`Expected one running container ... found 0`**: start the Dev Container.
+  The path given to `install-host` must match the folder VS Code opened, which
+  is the container's `devcontainer.local_folder` label.
+- **Upgrading from 0.1**: an existing `codex-data` volume is reused as-is. Its
+  `bin/` folder is no longer used, so you can delete it.
 
-An existing global `codex-data` volume containing only authentication or
-configuration can be reused. The Feature preserves its contents and adds the
-CLI when the shared executable is missing. Do not prune this volume unless you
-intend to remove the cached login and Codex state. Likewise, do not run
-`docker compose down -v` for a project-scoped volume unless you intend to
-remove that project's state.
+### How it works and the trust model
 
-Older Docker Compose projects may have project-scoped volumes with names such
-as `someproject_codex-data`. They are not merged automatically. List candidates
-with:
+`install-host` creates a dedicated SSH key, allowlists the workspace path, and
+writes an SSH config fragment under `~/.ssh/config.d/codex-devcontainers/`. On
+each connection, the local proxy finds the running container whose
+`devcontainer.local_folder` label matches, authorizes the key, and tunnels SSH
+through `docker exec`. Password and root login are disabled. Host-key checking
+is off for these aliases because every rebuild creates a new host key. The
+trust instead rests on the local Docker daemon, the allowlist, and the
+dedicated key. Docker access is effectively administrator access on the host,
+so keep these files writable only by your account.
 
-```sh
-docker volume ls --format '{{.Name}}' | grep '_codex-data$'
-```
+## Development
 
-If the new global `codex-data` volume is still empty, choose exactly one old
-volume as the source and copy it before starting new containers:
-
-```sh
-docker run --rm \
-  -v someproject_codex-data:/from:ro \
-  -v codex-data:/to \
-  alpine:3.20 sh -c 'cp -a /from/. /to/'
-```
-
-Do not combine multiple old volumes or copy into a populated target without
-first backing them up and resolving conflicts.
-
-Codex is not updated automatically while
-`/usr/local/share/codex-data/bin/codex` exists. To update it, rerun the official
-installer with the same `CODEX_HOME` and `CODEX_INSTALL_DIR`, or remove that
-executable and restart a container using the Feature.
-
-### 3. Verify the SSH alias
-
-Verify the connection from the same host environment where the installer ran.
-On Windows, run this from PowerShell or Command Prompt, not from WSL2:
-
-```sh
-ssh YOUR_SSH_ALIAS
-command -v codex
-codex --version
-```
-
-Then use the same SSH host alias in ChatGPT Desktop under
-**Settings → Connections → SSH**. Add the verified alias there and connect to
-it; successful command-line SSH alone does not finish the Desktop setup.
-
-To inspect the effective Windows OpenSSH settings before connecting, run:
-
-```powershell
-ssh -G YOUR_SSH_ALIAS | Select-String '^(user|hostname|identityfile|proxycommand) '
-```
-
-The `proxycommand` must reference `codex-devcontainer-proxy.ps1`. If the proxy
-reports that it found zero containers, confirm that the Dev Container is
-running and inspect its `devcontainer.local_folder` label:
-
-```powershell
-docker ps --filter "label=devcontainer.local_folder" --format "{{.ID}} {{.Labels}}"
-```
-
-The proxy does not save a container ID. A rebuild can replace the ID; on every
-SSH connection the proxy enumerates running labeled containers, reads each
-container's labels with `docker inspect`, and selects the one whose
-`devcontainer.local_folder` matches the allowlisted workspace path.
-
-### Windows troubleshooting
-
-- **`Could not resolve hostname ...`**: run `ssh -G YOUR_SSH_ALIAS` in the same
-  Windows account. Confirm it shows the generated `user`, `identityfile`, and
-  `proxycommand`. If it does not, check that `$HOME\.ssh\config` contains the
-  generated `Include` and that the alias fragment exists under
-  `$HOME\.ssh\config.d\codex-devcontainers`.
-- **`-File` reports that the script path does not exist, or `featureRepo` is
-  empty**: PowerShell did not receive a valid checkout path. Change to the
-  repository directory and use the literal single-line `-File
-  ".\scripts\install-host.ps1"` example, or replace it with the full path to
-  that file. Do not rely on a variable from an earlier PowerShell invocation.
-- **`Workspace does not exist: vscode`**: the three positional arguments are
-  shifted. The second argument must be the existing workspace path and the third
-  must be the remote user. Invoke `install-host.ps1` as `SshAlias`,
-  `WorkspacePath`, `RemoteUser`, in exactly that order.
-- **No container matches the workspace label** (`Expected one running container
-  ... found 0`): rebuild and start the Dev Container, then inspect labels safely
-  as JSON instead of parsing the display-formatted labels column:
-
-  ```powershell
-  docker ps --filter "label=devcontainer.local_folder" --format "{{.ID}}" | ForEach-Object { $id = $_; $labels = docker inspect --format '{{json .Config.Labels}}' $id | ConvertFrom-Json; [pscustomobject]@{ Id = $id; Workspace = $labels.'devcontainer.local_folder' } }
-  ```
-
-  The displayed workspace must be the same path passed to the installer. For a
-  WSL2 project that means the exact `\\wsl.localhost\DISTRO\...` UNC path.
-
-### Cleaning up a temporary checkout
-
-After installation and successful verification, a temporary clone of this
-repository may be deleted. Do not delete the generated host state needed by
-future connections—especially `$HOME\.ssh\config`,
-`$HOME\.ssh\config.d\codex-devcontainers`,
-`$HOME\.ssh\codex-devcontainer_ed25519` (and `.pub`), or
-`$HOME\.local\bin\codex-devcontainer-proxy.ps1`. Also retain the project
-allowlist under `$HOME\.config\codex-devcontainer-remote` (or the corresponding
-`$env:XDG_CONFIG_HOME` location) and the Docker volume `codex-data`.
-
-### Trust model
-
-- The Feature source is the code in [`src/codex-remote`](src/codex-remote).
-- Codex is fetched only from `https://chatgpt.com/codex/install.sh`.
-- OpenSSH, `curl`, CA certificates, and netcat come from the container's
-  Debian/Ubuntu package repository.
-- No password authentication or root SSH login is enabled.
-- No host port is exposed. The local proxy only selects running containers
-  whose exact workspace path appears in its allowlist. The Windows proxy
-  normalizes slash direction and path casing so Docker Desktop's WSL2 UNC
-  labels compare correctly.
-- SSH host-key checking is disabled for this alias because a rebuilt container
-  generates a new key. The connection instead trusts the local Docker daemon,
-  exact workspace label, allowlist, and dedicated client key.
-
-Docker access is effectively host-administrator access. Keep the proxy and its
-allowlist owned and writable only by your host account.
-
-### Compatibility
-
-The Feature supports Debian and Ubuntu family images with a non-root or root
-Dev Container user. Other Linux distributions fail with a clear error.
-
-The Windows host scripts require Windows OpenSSH, Windows PowerShell 5.1 or
-PowerShell 7, and Docker Desktop using Linux containers. WSL2 workspaces must
-be reachable through their `\\wsl.localhost\DISTRO\...` UNC path.
-
-The shared volume requires the Dev Containers to use the same Docker daemon.
-Sharing between non-root container users assumes they map to the same numeric
-UID; different UIDs are not guaranteed to have compatible write permissions.
-The Feature metadata uses only fields from the official Feature mount schema;
-Docker Compose sharing is configured explicitly in the project's Compose file.
-Projects requiring isolated Codex credentials should omit the external volume
-declaration and retain their project-scoped volume.
-
-## Release
-
-Run the **Release dev container features** workflow manually. It publishes the
-Feature to GitHub Container Registry as:
-
-```text
-ghcr.io/kabuto412rock/devcontainer-remote-features/codex-remote:0
-```
-
-The first published GHCR package may need its visibility changed to public in
-GitHub package settings before unauthenticated Dev Container builds can pull it.
+- Local end-to-end test on Windows: `.\test\local-devcontainer\run.ps1 -Rebuild`
+- CI runs the Feature tests and scenarios in `test/codex-remote/`.
+- Release: run the **Release dev container features** workflow. It publishes
+  `ghcr.io/kabuto412rock/devcontainer-remote-features/codex-remote:0`.
