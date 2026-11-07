@@ -1,16 +1,30 @@
+# Usage (all arguments optional; run from the project folder):
+#   install-host.ps1 [SshAlias] [WorkspacePath] [RemoteUser]
+# Defaults: WorkspacePath = current directory,
+#           SshAlias = <workspace folder name>-devcontainer, RemoteUser = vscode.
 param(
-    [Parameter(Mandatory = $true, Position = 0)]
+    [Parameter(Position = 0)]
     [string]$SshAlias,
 
-    [Parameter(Mandatory = $true, Position = 1)]
-    [string]$WorkspacePath,
+    [Parameter(Position = 1)]
+    [string]$WorkspacePath = (Get-Location).ProviderPath,
 
-    [Parameter(Mandatory = $true, Position = 2)]
-    [string]$RemoteUser
+    [Parameter(Position = 2)]
+    [string]$RemoteUser = 'vscode'
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+
+if (-not (Test-Path -LiteralPath $WorkspacePath -PathType Container)) {
+    throw "Workspace does not exist: $WorkspacePath"
+}
+$WorkspacePath = (Resolve-Path -LiteralPath $WorkspacePath).ProviderPath.TrimEnd('\')
+
+if (-not $SshAlias) {
+    $folderName = (Split-Path -Leaf $WorkspacePath).ToLowerInvariant() -replace '[^a-z0-9._-]', '-'
+    $SshAlias = "$folderName-devcontainer"
+}
 
 if ($SshAlias -notmatch '^[A-Za-z0-9._-]+$') {
     throw 'SSH alias may contain only letters, digits, dot, underscore, and dash.'
@@ -27,21 +41,15 @@ if (-not (Get-Command ssh-keygen.exe -ErrorAction SilentlyContinue)) {
 if (-not (Get-Command icacls.exe -ErrorAction SilentlyContinue)) {
     throw 'icacls.exe was not found on PATH.'
 }
-if (-not (Test-Path -LiteralPath $WorkspacePath -PathType Container)) {
-    throw "Workspace does not exist: $WorkspacePath"
-}
-
-$WorkspacePath = (Resolve-Path -LiteralPath $WorkspacePath).ProviderPath.TrimEnd('\')
-
-& docker.exe volume inspect codex-data *> $null
-if ($LASTEXITCODE -eq 0) {
-    Write-Host 'Reusing shared Docker volume: codex-data'
-} else {
-    & docker.exe volume create codex-data *> $null
+foreach ($volume in 'codex-data', 'claude-data') {
+    & docker.exe volume inspect $volume *> $null
     if ($LASTEXITCODE -ne 0) {
-        throw "Failed to create the shared Docker volume 'codex-data'. Check that Docker Desktop is running."
+        & docker.exe volume create $volume *> $null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to create the Docker volume '$volume'. Check that Docker Desktop is running."
+        }
+        Write-Host "Created Docker volume: $volume"
     }
-    Write-Host 'Created shared Docker volume: codex-data'
 }
 
 $binDir = Join-Path $HOME '.local\bin'
@@ -130,6 +138,5 @@ $fragmentFile = Join-Path $fragmentDir "$SshAlias.conf"
 [System.IO.File]::WriteAllText($fragmentFile, ($fragment.Trim() + "`r`n"), $utf8NoBom)
 Protect-UserFile $fragmentFile
 
-Write-Host "Installed SSH alias: $SshAlias"
-Write-Host "Workspace allowlisted: $WorkspacePath"
-Write-Host "Test after rebuilding the container: ssh $SshAlias"
+Write-Host "Installed SSH alias '$SshAlias' (user $RemoteUser) for $WorkspacePath"
+Write-Host "Start the Dev Container, then connect with: ssh $SshAlias"

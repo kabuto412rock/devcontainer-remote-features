@@ -1,0 +1,17 @@
+{
+  "name": "codex-remote-local-test",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "remoteUser": "vscode",
+  "features": {
+    "./codex-remote": {
+      "installCodex": true,
+      "installClaudeCode": true
+    }
+  }
+  // To use host folders instead of the default Docker volumes, uncomment and
+  // pick the line for your host (the folders must already exist):
+  // ,"mounts": [
+  //   { "type": "bind", "source": "${localEnv:USERPROFILE}/.codex",  "target": "/usr/local/share/codex-data" },
+  //   { "type": "bind", "source": "${localEnv:USERPROFILE}/.claude", "target": "/usr/local/share/claude-data" }
+  // ]
+}
