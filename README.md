@@ -1,16 +1,17 @@
 # Dev Container Remote Features
 
-## Codex Remote SSH (`codex-remote`)
+## Codex / Claude Code Remote SSH (`codex-remote`)
 
 A Dev Container Feature for Debian/Ubuntu images that:
 
-- installs **Codex CLI** using OpenAI's official installer;
-- keeps Codex's login and settings in a Docker volume, or in a host folder you choose;
+- installs **Codex CLI**, **Claude Code**, or both, using the official
+  installers;
+- keeps their login in Docker volumes, so you stay logged in across rebuilds
+  and projects;
+- lets you mount your own `AGENTS.md`, `CLAUDE.md` or Claude `settings.json`
+  from the host;
 - runs a key-only SSH server inside the container, with no published port, so
-  ChatGPT Desktop or any SSH client can connect.
-
-To use Claude Code in the same container, add Anthropic's official Feature
-`ghcr.io/anthropics/devcontainer-features/claude-code:1` alongside this one.
+  ChatGPT Desktop, Claude Desktop, or any SSH client can connect.
 
 ### Quick start
 
@@ -19,7 +20,10 @@ To use Claude Code in the same container, add Anthropic's official Feature
 
 ```jsonc
 "features": {
-  "ghcr.io/kabuto412rock/devcontainer-remote-features/codex-remote:0": {}
+  "ghcr.io/kabuto412rock/devcontainer-remote-features/codex-remote:0": {
+    "installCodex": true,
+    "installClaudeCode": true
+  }
 }
 ```
 
@@ -45,26 +49,38 @@ For a WSL2 project, run the Windows script from the project's
 ```sh
 ssh my-project-devcontainer
 codex --version
+claude --version
 ```
 
-Add the same alias in ChatGPT Desktop under **Settings → Connections → SSH**.
+Add the same alias in your desktop app's SSH connection settings, such as
+ChatGPT Desktop under **Settings → Connections → SSH**.
 
 ### Options
 
 | Option | Default | Description |
 | --- | --- | --- |
 | `installCodex` | `true` | Install Codex CLI (`https://chatgpt.com/codex/install.sh`) |
+| `installClaudeCode` | `false` | Install Claude Code (`https://claude.ai/install.sh`) |
 
-Codex is installed into the image when it is built, so a new version arrives
-when you rebuild the container.
+Set both to `true` to get both CLIs. The CLIs are installed into the image when
+it is built, so a new version arrives when you rebuild the container. Claude
+Code can also update itself until then.
+
+Claude Code uses Anthropic's native installer, which needs no Node.js. This
+differs from Anthropic's own `claude-code` Feature, which installs the npm
+package. Don't add both Features to one container.
 
 ### Where login and settings are stored
 
-Codex uses `/usr/local/share/codex-data` (`CODEX_HOME`) inside the container.
+| Tool | Container path | Environment variable | Default Docker volume |
+| --- | --- | --- | --- |
+| Codex | `/usr/local/share/codex-data` | `CODEX_HOME` | `codex-data` |
+| Claude Code | `/usr/local/share/claude-data` | `CLAUDE_CONFIG_DIR` | `claude-data` |
 
-**Docker volume (default).** The Feature mounts the `codex-data` volume. Every
-image-based Dev Container on the same Docker daemon shares it, so you log in
-once. You don't need to create it in advance.
+**Docker volume (default).** The Feature mounts both volumes. Every
+image-based Dev Container on the same Docker daemon shares them, so you log in
+once and stay logged in after a rebuild. You don't need to create them in
+advance.
 
 **Host folder.** To use a host folder instead, add a mount with the same
 `target` to the project's `devcontainer.json`. It replaces the Feature's volume.
@@ -73,25 +89,61 @@ The folder must already exist:
 ```jsonc
 "mounts": [
   // Windows: ${localEnv:USERPROFILE}   macOS/Linux: ${localEnv:HOME}
-  { "type": "bind", "source": "${localEnv:USERPROFILE}/.codex", "target": "/usr/local/share/codex-data" }
+  { "type": "bind", "source": "${localEnv:USERPROFILE}/.codex",  "target": "/usr/local/share/codex-data" },
+  { "type": "bind", "source": "${localEnv:USERPROFILE}/.claude", "target": "/usr/local/share/claude-data" }
 ]
 ```
 
-A host `~/.codex` also shares its login with Codex on the host. The Feature
-never changes ownership of files in a host folder.
+You can choose per tool. A host folder also shares its login with the CLI on
+the host. Claude Code keeps its macOS login in the Keychain, so log in once
+inside the container. The Feature never changes ownership of files in a host
+folder.
 
-**Docker Compose** scopes volume names per project. To share the global volume,
-declare it as external in `docker-compose.yml`. `install-host` creates it:
+**Docker Compose** scopes volume names per project. To share the global
+volumes, declare them as external in `docker-compose.yml`. `install-host`
+creates them:
 
 ```yaml
 volumes:
   codex-data:
     name: codex-data
     external: true
+  claude-data:
+    name: claude-data
+    external: true
 ```
 
-The volume holds credentials and history. Mount it only in containers you
+These volumes hold credentials and history. Mount them only in containers you
 trust.
+
+### Mounting your own AGENTS.md or Claude settings
+
+To keep the login in the volume but use your personal config files from the
+host, bind-mount only the files you want on top of the data directories. Each
+line is independent, so include only the ones you need. The host file must
+already exist, or the container fails to start:
+
+```jsonc
+"mounts": [
+  // Windows: ${localEnv:USERPROFILE}   macOS/Linux: ${localEnv:HOME}
+  // Codex global instructions
+  { "type": "bind", "source": "${localEnv:USERPROFILE}/.codex/AGENTS.md", "target": "/usr/local/share/codex-data/AGENTS.md", "readonly": true },
+  // Claude Code user memory
+  { "type": "bind", "source": "${localEnv:USERPROFILE}/.claude/CLAUDE.md", "target": "/usr/local/share/claude-data/CLAUDE.md", "readonly": true },
+  // Claude Code user settings
+  { "type": "bind", "source": "${localEnv:USERPROFILE}/.claude/settings.json", "target": "/usr/local/share/claude-data/settings.json", "readonly": true }
+]
+```
+
+- With `readonly`, a CLI inside the container cannot change your host files.
+  Claude Code then cannot save user-settings changes, for example from
+  `/config`. Drop `readonly` if you want that.
+- Mount single files, not the whole `~/.codex` or `~/.claude` folder, unless
+  you also want to share the login with the host (see above).
+- Project files such as `AGENTS.md`, `CLAUDE.md` and `.claude/settings.json` in
+  the workspace need no mount. The CLIs read them from the project.
+- Docker leaves an empty placeholder file at each target in the shared volume,
+  so other containers that don't mount the file see an empty one.
 
 ### Troubleshooting
 
@@ -123,6 +175,8 @@ so keep these files writable only by your account.
 ## Development
 
 - Local end-to-end test on Windows: `.\test\local-devcontainer\run.ps1 -Rebuild`
-- CI runs the Feature tests in `test/codex-remote/`.
+- CI runs the Feature tests and the scenarios in `test/codex-remote/`, written
+  with `dev-container-features-test-lib` (`check` / `reportResults`), plus
+  `test/codex-remote/config-mounts.sh` for the host config-file mounts.
 - Release: run the **Release dev container features** workflow. It publishes
   `ghcr.io/kabuto412rock/devcontainer-remote-features/codex-remote:0`.
