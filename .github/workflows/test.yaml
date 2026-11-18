@@ -13,7 +13,7 @@ jobs:
   windows-host-scripts:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Parse Windows host scripts
         shell: pwsh
         run: |
@@ -34,7 +34,7 @@ jobs:
           if ($failed) { exit 1 }
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix:
@@ -43,7 +43,7 @@ jobs:
           - ubuntu:24.04
           - mcr.microsoft.com/devcontainers/base:ubuntu
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install Dev Container CLI
         run: npm install -g @devcontainers/cli
       - name: Test shared Codex volume
@@ -54,9 +54,9 @@ jobs:
         run: BASE_IMAGE="${{ matrix.baseImage }}" sh ./test/codex-remote/config-mounts.sh
 
   scenarios:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install Dev Container CLI
         run: npm install -g @devcontainers/cli
       - name: Test Claude Code scenarios
