@@ -37,3 +37,6 @@ prepare_data_dir() {
 if [ "$(cat "$SHARE_DIR/install-codex")" = true ]; then
     prepare_data_dir /usr/local/share/codex-data Codex
 fi
+if [ "$(cat "$SHARE_DIR/install-claude-code" 2>/dev/null || echo false)" = true ]; then
+    prepare_data_dir /usr/local/share/claude-data "Claude Code"
+fi
